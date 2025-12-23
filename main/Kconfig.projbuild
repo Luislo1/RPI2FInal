@@ -10,4 +10,7 @@ menu "Example Configuration"
         bool
         default y if BROKER_URL = "FROM_STDIN"
 
+
+    #AÑADIR LOS PARAMETROS PARA THINGSBOARD
+
 endmenu

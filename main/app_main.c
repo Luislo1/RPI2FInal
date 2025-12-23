@@ -21,6 +21,10 @@
 #include "cJSON.h"
 #include "nvs.h"
 
+#include "esp_wifi.h"
+
+#include "driver/temperature_sensor.h"
+
 #include "esp_log.h"
 #include "mqtt_client.h"
 
@@ -35,9 +39,18 @@ esp_mqtt_client_handle_t client;
 
 
 // Settings from ThingsBoard Device Profile (Step 1)
-#define PROVISION_KEY    "mjcevunkll3fz3q6dhmb"
-#define PROVISION_SECRET "coh9hpv4r8t0naj8un9g"
-#define DEVICE_NAME      "ESP32_New_Device_001" // Or generate this dynamically from MAC address
+#define PROVISION_KEY     "5f1vaec8gv1v7n8r6e7s"  //LUIS: "mjcevunkll3fz3q6dhmb" RUBEN: "5f1vaec8gv1v7n8r6e7s"
+#define PROVISION_SECRET  "2baxr3zfdwucqmw8sc60"  //LUIS: "coh9hpv4r8t0naj8un9g" RUBEN: "2baxr3zfdwucqmw8sc60"
+#define DEVICE_NAME      "ESP32_New_Device_001_LUIS_RUBEN"  // Or generate this dynamically from MAC address
+
+temperature_sensor_handle_t temp_sensor = NULL;
+
+void init_temp_sensor() {
+    temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(10, 50);
+    ESP_ERROR_CHECK(temperature_sensor_install(&temp_sensor_config, &temp_sensor));
+    ESP_ERROR_CHECK(temperature_sensor_enable(temp_sensor));
+}
+
 
 // Global to hold the final token
 char access_token[128] = {0};
@@ -240,26 +253,58 @@ void generar_datos(float *temp, float *hum, float *lux, float *vibr) {
     *vibr = random_float(0.0, 10.0);
 }
 
+void obtener_datos(int8_t *rssi, uint32_t *heap) {
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        *rssi = ap_info.rssi;
+    } else {
+        *rssi = 0;
+    }
+    *heap = esp_get_free_heap_size();
+}
+
+float obtener_temperatura_mcu() {
+    float tsens_out;
+    if (temp_sensor != NULL) {
+        ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_sensor, &tsens_out));
+        return tsens_out;
+    }
+    return 0.0;
+}
+
+
 void publisher(void *pvParameters) {
     int msg_id;
+    
     srand(time(NULL));
     vTaskDelay(500 / portTICK_PERIOD_MS);
 
     // ThingsBoard requires this specific topic for telemetry
     const char *tb_topic = "v1/devices/me/telemetry";
-
+    //wifi_ap_record_t *ap;
     while (1) {
-        if (sensor_active) {
+        if (!is_provisioning_mode && client != NULL) {
+            int8_t rssi;
+            uint32_t heap;
+            obtener_datos(&rssi, &heap);
+
+            float mcu_temp = obtener_temperatura_mcu();
+
+            char payload[256]; 
+            snprintf(payload, sizeof(payload), 
+                     "{\"mcu_temp\": %.2f, \"free_heap\": %" PRIu32 ", \"rssi\": %d}", 
+                     mcu_temp, heap, rssi);
+            /*
             float temp, hum, lux, vibr;
             generar_datos(&temp, &hum, &lux, &vibr);
-
+            //ap = esp_wifi_sta_get_ap_info(ap);
             // Create a JSON string. 
             // Example output: {"temperature": 23.5, "humidity": 50.2, "lux": 500.0, "vibration": 1.2}
             char payload[128]; 
             snprintf(payload, sizeof(payload), 
                      "{\"temperature\": %.2f, \"humidity\": %.2f, \"lux\": %.2f, \"vibration\": %.2f}", 
                      temp, hum, lux, vibr);
-
+            */
             // Publish to ThingsBoard
             // QoS 0 or 1 is fine. Retain should usually be 0 for telemetry.
             msg_id = esp_mqtt_client_publish(client, tb_topic, payload, 0, 1, 0);
@@ -273,6 +318,9 @@ void publisher(void *pvParameters) {
     }
     vTaskDelete(NULL);
 }
+
+
+
 
 
 void app_main(void)
@@ -299,5 +347,6 @@ void app_main(void)
      */
     ESP_ERROR_CHECK(example_connect());
     mqtt_app_start();
+    init_temp_sensor(); // Inicializar el sensor interno
     xTaskCreate(&publisher, "Sensor", 4096, NULL, 0, &sensor_handle);
 }
