@@ -1,0 +1,8 @@
+syntax ="proto3";
+package telemetry;
+
+message SensorDataReading {
+  double mcu_temp = 1;
+  int32 rssi = 2;
+  uint32 free_heap = 3;
+}

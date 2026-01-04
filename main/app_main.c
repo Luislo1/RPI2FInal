@@ -28,6 +28,9 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 
+#include "pb_encode.h"
+#include "telemetry.pb.h"
+
 #define TOPIC "EDIFICIO_3/P_4/N/12"
 
 static bool sensor_active = true;
@@ -39,9 +42,9 @@ esp_mqtt_client_handle_t client;
 
 
 // Settings from ThingsBoard Device Profile (Step 1)
-#define PROVISION_KEY     "5f1vaec8gv1v7n8r6e7s"  //LUIS: "mjcevunkll3fz3q6dhmb" RUBEN: "5f1vaec8gv1v7n8r6e7s"
-#define PROVISION_SECRET  "2baxr3zfdwucqmw8sc60"  //LUIS: "coh9hpv4r8t0naj8un9g" RUBEN: "2baxr3zfdwucqmw8sc60"
-#define DEVICE_NAME      "ESP32_New_Device_001_LUIS_RUBEN"  // Or generate this dynamically from MAC address
+#define PROVISION_KEY     "ioq4fnriznh7d01297k5"  //LUIS: "mjcevunkll3fz3q6dhmb" RUBEN: "ioq4fnriznh7d01297k5"
+#define PROVISION_SECRET  "h5d1joc7aujnibkzdh93"  //LUIS: "coh9hpv4r8t0naj8un9g" RUBEN: "h5d1joc7aujnibkzdh93"
+#define DEVICE_NAME      "ESP32_LUIS_RUBEN"  // Or generate this dynamically from MAC address
 
 temperature_sensor_handle_t temp_sensor = NULL;
 
@@ -237,7 +240,7 @@ static void mqtt_app_start(void)
         .credentials.username = is_provisioning_mode ? "provision" : access_token, 
     };
 
-    esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
+    client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
 }
@@ -294,7 +297,7 @@ void publisher(void *pvParameters) {
             snprintf(payload, sizeof(payload), 
                      "{\"mcu_temp\": %.2f, \"free_heap\": %" PRIu32 ", \"rssi\": %d}", 
                      mcu_temp, heap, rssi);
-            /*
+            /*/
             float temp, hum, lux, vibr;
             generar_datos(&temp, &hum, &lux, &vibr);
             //ap = esp_wifi_sta_get_ap_info(ap);
@@ -319,8 +322,46 @@ void publisher(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
+/*
+#include "pb_encode.h"
+#include "telemetry.pb.h"
 
+void publisher(void *pvParameters) {
+    uint8_t buffer[128]; // Buffer para los bytes binarios
+    
+    while (1) {
+        if (!is_provisioning_mode && client != NULL) {
+            // 1. Obtener los datos reales
+            float mcu_temp = obtener_temperatura_mcu();
+            uint32_t heap = esp_get_free_heap_size();
+            int8_t rssi = 0;
+            wifi_ap_record_t ap_info;
+            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) rssi = ap_info.rssi;
 
+            // 2. Preparar la estructura de Nanopb
+            telemetry_SensorDataReading message = telemetry_SensorDataReading_init_default;
+            message.mcu_temp = (double)mcu_temp;
+            message.rssi = (int32_t)rssi;
+            message.free_heap = heap;
+
+            // 3. Codificar el mensaje a binario
+            pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+            if (!pb_encode(&stream, telemetry_SensorDataReading_fields, &message)) {
+                ESP_LOGE(TAG, "Error al codificar: %s", PB_GET_ERROR(&stream));
+                continue;
+            }
+            size_t len = stream.bytes_written;
+
+            // 4. PUBLICAR al tópico de Protobuf
+            // IMPORTANTE: ThingsBoard usa el sufijo /proto
+            esp_mqtt_client_publish(client, "v1/devices/me/telemetry", (const char *)buffer, len, 1, 0);
+            
+            ESP_LOGI(TAG, "Enviado Protobuf (%d bytes). Temp: %.2f", (int)len, mcu_temp);
+        }
+        vTaskDelay(pdMS_TO_TICKS(intervalo_envio));
+    }
+}
+*/
 
 
 void app_main(void)
