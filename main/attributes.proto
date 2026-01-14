@@ -1,0 +1,8 @@
+syntax = "proto3";
+package attributes;
+
+message SensorConfiguration {
+  //string firmwareVersion = 1; 
+  //string serialNumber = 2;
+  uint32 intervalo_envio = 1; // Añadimos esto para que coincida con tu lógica de C
+}

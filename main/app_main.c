@@ -28,6 +28,8 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 
+#include "pb_decode.h"
+#include "attributes.pb.h"
 #include "pb_encode.h"
 #include "telemetry.pb.h"
 
@@ -49,9 +51,12 @@ esp_mqtt_client_handle_t client;
 temperature_sensor_handle_t temp_sensor = NULL;
 
 void init_temp_sensor() {
-    temperature_sensor_config_t temp_sensor_config = TEMPERATURE_SENSOR_CONFIG_DEFAULT(10, 50);
-    ESP_ERROR_CHECK(temperature_sensor_install(&temp_sensor_config, &temp_sensor));
-    ESP_ERROR_CHECK(temperature_sensor_enable(temp_sensor));
+    temperature_sensor_config_t temp_sensor_config = {
+    .range_min = 10,
+    .range_max = 50,
+    };
+    //ESP_ERROR_CHECK(temperature_sensor_install(&temp_sensor_config, &temp_sensor));
+    //ESP_ERROR_CHECK(temperature_sensor_enable(temp_sensor));
 }
 
 
@@ -133,8 +138,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
             // 3. Request the current value of 'intervalo_envio'
             // We use request ID '1'
-            const char *req_payload = "{\"sharedKeys\":\"intervalo_envio\"}";
-            esp_mqtt_client_publish(client, "v1/devices/me/attributes/request/1", req_payload, 0, 0, 0);
+            const char *req_payload = "{\"sharedKeys\":\"intervalo_envio\"}"; 
+            esp_mqtt_client_publish(client, "v1/devices/me/attributes/request/1", req_payload, 0, 0, 0); 
             
             ESP_LOGI(TAG, "Subscribed to attributes and requested current value");
         }
@@ -145,8 +150,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-        msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
-        ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+        //msg_id = esp_mqtt_client_publish(client, "/topic/qos0", "data", 0, 0, 0);
+        //ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
         break;
     case MQTT_EVENT_UNSUBSCRIBED:
         ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
@@ -155,7 +160,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
         break;
     case MQTT_EVENT_DATA:
-        if (is_provisioning_mode) {
+         if (is_provisioning_mode) {
             printf("Provision Response: %.*s\r\n", event->data_len, event->data);
             
             // Parse JSON to get credentialsValue
@@ -187,11 +192,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 
         // Check if the payload contains our attribute directly
         // (This happens on live updates via 'v1/devices/me/attributes')
-        cJSON *intervalItem = cJSON_GetObjectItem(root, "intervalo_envio");
+        cJSON *intervalItem = cJSON_GetObjectItem(root, "intervalo_envio"); 
         
         // If not found directly, it might be inside a "shared" object
         // (This happens on response to request 'v1/devices/me/attributes/response/+')
-        if (!intervalItem) {
+        if (!intervalItem) { 
             cJSON *shared = cJSON_GetObjectItem(root, "shared");
             if (shared) {
                 intervalItem = cJSON_GetObjectItem(shared, "intervalo_envio");
@@ -199,7 +204,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         }
 
         // If we found the item and it is a number, update the variable
-        if (intervalItem && cJSON_IsNumber(intervalItem)) {
+        if (intervalItem && cJSON_IsNumber(intervalItem)) { 
             intervalo_envio = intervalItem->valueint;
             ESP_LOGI(TAG, "NEW INTERVAL SET: %d ms", intervalo_envio);
         }
@@ -267,6 +272,7 @@ void obtener_datos(int8_t *rssi, uint32_t *heap) {
 }
 
 float obtener_temperatura_mcu() {
+    return 17;
     float tsens_out;
     if (temp_sensor != NULL) {
         ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_sensor, &tsens_out));
@@ -276,7 +282,7 @@ float obtener_temperatura_mcu() {
 }
 
 
-void publisher(void *pvParameters) {
+/*void publisher(void *pvParameters) {
     int msg_id;
     
     srand(time(NULL));
@@ -297,7 +303,7 @@ void publisher(void *pvParameters) {
             snprintf(payload, sizeof(payload), 
                      "{\"mcu_temp\": %.2f, \"free_heap\": %" PRIu32 ", \"rssi\": %d}", 
                      mcu_temp, heap, rssi);
-            /*/
+            //
             float temp, hum, lux, vibr;
             generar_datos(&temp, &hum, &lux, &vibr);
             //ap = esp_wifi_sta_get_ap_info(ap);
@@ -307,7 +313,7 @@ void publisher(void *pvParameters) {
             snprintf(payload, sizeof(payload), 
                      "{\"temperature\": %.2f, \"humidity\": %.2f, \"lux\": %.2f, \"vibration\": %.2f}", 
                      temp, hum, lux, vibr);
-            */
+            //
             // Publish to ThingsBoard
             // QoS 0 or 1 is fine. Retain should usually be 0 for telemetry.
             msg_id = esp_mqtt_client_publish(client, tb_topic, payload, 0, 1, 0);
@@ -320,49 +326,70 @@ void publisher(void *pvParameters) {
         vTaskDelay(intervalo_envio / portTICK_PERIOD_MS);
     }
     vTaskDelete(NULL);
-}
+}*/
 
-/*
+
 #include "pb_encode.h"
 #include "telemetry.pb.h"
 
-void publisher(void *pvParameters) {
-    uint8_t buffer[128]; // Buffer para los bytes binarios
-    
+void publisher(void *pvParameters)
+{
+    uint8_t buffer[128]; // Buffer para Protobuf binario
+
     while (1) {
         if (!is_provisioning_mode && client != NULL) {
-            // 1. Obtener los datos reales
+
+            // 1. Obtener datos
             float mcu_temp = obtener_temperatura_mcu();
             uint32_t heap = esp_get_free_heap_size();
+
             int8_t rssi = 0;
             wifi_ap_record_t ap_info;
-            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) rssi = ap_info.rssi;
+            if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+                rssi = ap_info.rssi;
+            }
 
-            // 2. Preparar la estructura de Nanopb
-            telemetry_SensorDataReading message = telemetry_SensorDataReading_init_default;
+            // 2. Crear mensaje Protobuf (nanopb)
+            telemetry_SensorDataReading message =
+                telemetry_SensorDataReading_init_default;
+
             message.mcu_temp = (double)mcu_temp;
             message.rssi = (int32_t)rssi;
             message.free_heap = heap;
 
-            // 3. Codificar el mensaje a binario
-            pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
-            if (!pb_encode(&stream, telemetry_SensorDataReading_fields, &message)) {
-                ESP_LOGE(TAG, "Error al codificar: %s", PB_GET_ERROR(&stream));
+            // 3. Codificar a binario
+            pb_ostream_t stream =
+                pb_ostream_from_buffer(buffer, sizeof(buffer));
+
+            if (!pb_encode(&stream,
+                            telemetry_SensorDataReading_fields,
+                            &message)) {
+                ESP_LOGE(TAG, "Error al codificar Protobuf: %s",
+                         PB_GET_ERROR(&stream));
+                vTaskDelay(pdMS_TO_TICKS(intervalo_envio));
                 continue;
             }
+
             size_t len = stream.bytes_written;
 
-            // 4. PUBLICAR al tópico de Protobuf
-            // IMPORTANTE: ThingsBoard usa el sufijo /proto
-            esp_mqtt_client_publish(client, "v1/devices/me/telemetry", (const char *)buffer, len, 1, 0);
-            
-            ESP_LOGI(TAG, "Enviado Protobuf (%d bytes). Temp: %.2f", (int)len, mcu_temp);
+            // 4. PUBLICAR en el topic CORRECTO de ThingsBoard
+            esp_mqtt_client_publish(
+                client,
+                "v1/devices/me/telemetry", // 
+                (const char *)buffer,
+                len,   // 
+                1,     // QoS recomendado
+                0
+            );
+
+            ESP_LOGI(TAG,
+                     "Enviado Protobuf (%d bytes). Temp: %.2f",
+                     (int)len, mcu_temp);
         }
+
         vTaskDelay(pdMS_TO_TICKS(intervalo_envio));
     }
 }
-*/
-
 
 void app_main(void)
 {
